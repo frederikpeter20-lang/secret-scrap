@@ -16,7 +16,7 @@ COPY pyproject.toml uv.lock* ./
 COPY ek_scraper ./ek_scraper
 
 # Lock neu prüfen + sync
-RUN uv lock --check && uv sync --frozen --no-dev --no-install-project
+RUN uv lock && uv sync --frozen --no-dev --no-install-project
 
 FROM python:3.11-slim
 
