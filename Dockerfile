@@ -15,7 +15,7 @@ COPY pyproject.toml uv.lock* ./
 COPY ek_scraper ./ek_scraper
 
 # Install dependencies
-RUN uv sync --no-dev
+RUN uv sync --frozen --no-dev
 
 FROM python:3.11-slim
 
