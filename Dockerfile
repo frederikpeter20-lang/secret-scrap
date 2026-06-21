@@ -2,6 +2,13 @@ FROM python:3.11-slim as builder
 
 WORKDIR /app
 
+COPY pyproject.toml uv.lock ./
+COPY ek_scraper ./ek_scraper
+
+# Lockfile validieren + sync
+RUN uv lock --check && \
+    uv sync --frozen --no-dev
+
 # System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
