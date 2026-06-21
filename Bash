@@ -1,0 +1,6 @@
+# Lockfile komplett neu bauen
+rm -f uv.lock
+uv lock --verbose
+
+# Dann testen
+uv sync --frozen --no-dev
