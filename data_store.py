@@ -1,97 +1,92 @@
-import argparse
-import asyncio
+from __future__ import annotations
+
 import logging
 import pathlib
-import sys
 from typing import Any
 
-from . import __version__
-from .config import Config
-from .data_store import DataStore
-from .notifications import pushover, ntfy_sh, telegram
-from .scraper import get_filtered_search_result
-from .url_generator import generate_search_url
+import pydantic
+
+__all__ = ["DataStore", "AdItem"]
 
 _logger = logging.getLogger(__name__)
 
 
-def configure_logging(verbose: bool) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-    )
+class AdItem(pydantic.BaseModel):
+    """Definition of an Ad item"""
+
+    id: str
+    url: str
+    title: str
+    description: str
+    location: str
+    price: str
+    is_top_ad: bool
+    image_url: str | None = None
+    pruneable: bool = pydantic.Field(default=True, exclude=True)
 
 
-async def run(config_file: pathlib.Path, data_store_file: pathlib.Path, send_notifications: bool, **kwargs: Any):
-    config = Config.model_validate_json(config_file.read_text())
+class _DataStoreData(pydantic.BaseModel):
+    ad_items: dict[str, AdItem] = pydantic.Field(default_factory=dict)
 
-    with DataStore(data_store_file, prune_on_close=True) as store:
-        results = []
-        for search in config.searches:
-            new_ads = await get_filtered_search_result(search, config.filter, store, config)
-            if new_ads:
-                results.append(type("Result", (), {
-                    "search_config": search,
-                    "ad_items": new_ads,
-                    "get_title": lambda s=search: s.name,
-                    "get_message": lambda self: f"Found {len(new_ads)} new ads",
-                    "get_url": lambda s=search: s.url,
-                })())
+    def __contains__(self, key: object) -> bool:
+        return key in self.ad_items
 
-    for r in results:
-        _logger.info("%s: %d new ads", r.get_title(), len(r.ad_items))
+    def add(self, ad_item: AdItem) -> bool:
+        if ad_item.id in self.ad_items:
+            _logger.debug("Ad item '%s' already in data store", ad_item.id)
+            self.ad_items[ad_item.id].pruneable = False
+            return False
 
-    if not send_notifications or not results:
-        return
+        ad_item.pruneable = False
+        self.ad_items[ad_item.id] = ad_item
+        return True
 
-    notif_config = config.notifications
-    if notif_config.pushover:
-        await pushover.send_notifications(results, notif_config.pushover)
-    if notif_config.ntfy_sh:
-        await ntfy_sh.send_notifications(results, notif_config.ntfy_sh)
-    if notif_config.telegram:
-        await telegram.send_notifications(results, notif_config.telegram)
+    def prune(self) -> None:
+        pruneable_ids = [aid for aid, item in self.ad_items.items() if item.pruneable]
+        _logger.info("Pruning %d old items from data store", len(pruneable_ids))
+        for aid in pruneable_ids:
+            del self.ad_items[aid]
+
+    def mark_as_non_pruneable(self, ad_item: AdItem) -> None:
+        if item := self.ad_items.get(ad_item.id):
+            item.pruneable = False
 
 
-def main():
-    parser = argparse.ArgumentParser(description="ek-scraper improved v2 - Scraper for kleinanzeigen.de")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+class DataStore:
+    """JSON-backed data store for seen advertisements"""
 
-    # Run scraper
-    run_parser = subparsers.add_parser("run", help="Run the scraper with a config file")
-    run_parser.add_argument("config_file", type=pathlib.Path, help="Path to config JSON")
-    run_parser.add_argument("--data-store", type=pathlib.Path, default=pathlib.Path.home() / "ek-scraper-v2.json")
-    run_parser.add_argument("--no-notifications", action="store_false", dest="send_notifications", default=True)
-    run_parser.add_argument("-v", "--verbose", action="store_true")
+    def __init__(self, path: pathlib.Path, prune_on_close: bool = True):
+        self._path = path
+        self._data = _DataStoreData()
+        self._prune_on_close = prune_on_close
 
-    # Generate search URL
-    gen_parser = subparsers.add_parser("generate-url", help="Generate a kleinanzeigen.de search URL")
-    gen_parser.add_argument("--keyword", required=True, help="Search keyword (e.g. 'fahrrad')")
-    gen_parser.add_argument("--location", help="Location slug (e.g. 'berlin' or 'hamburg-altona')")
-    gen_parser.add_argument("--price-min", type=int, help="Minimum price")
-    gen_parser.add_argument("--price-max", type=int, help="Maximum price")
-    gen_parser.add_argument("--category", help="Category path (e.g. 'c203' for wohnung)")
-    gen_parser.add_argument("--sort", default="date", choices=["date", "price_asc", "price_desc", "distance"])
+    def __enter__(self) -> DataStore:
+        self.open()
+        return self
 
-    args = parser.parse_args()
-    configure_logging(getattr(args, "verbose", False))
+    def __exit__(self, *args: Any) -> None:
+        self.close()
 
-    if args.command == "run":
-        asyncio.run(run(**vars(args)))
-    elif args.command == "generate-url":
-        url = generate_search_url(
-            keyword=args.keyword,
-            location=args.location,
-            price_min=args.price_min,
-            price_max=args.price_max,
-            category=args.category,
-            sort=args.sort,
-        )
-        print(url)
-        print("\nTipp: Öffne die URL im Browser und kopiere sie in deine config.json für beste Ergebnisse.")
+    def open(self) -> None:
+        try:
+            if self._path.exists() and self._path.stat().st_size > 0:
+                self._data = _DataStoreData.model_validate_json(self._path.read_text())
+        except pydantic.ValidationError:
+            _logger.error("Invalid data store schema. Please delete the file and start fresh.")
+            raise
+        except FileNotFoundError:
+            _logger.info("Data store will be created at %s", self._path)
 
+    def close(self) -> None:
+        if self._prune_on_close:
+            self.prune()
+        self._path.write_text(self._data.model_dump_json(by_alias=True, exclude_none=True))
 
-if __name__ == "__main__":
-    main()
+    def prune(self) -> None:
+        self._data.prune()
+
+    def add(self, ad_item: AdItem) -> bool:
+        return self._data.add(ad_item)
+
+    def mark_as_non_pruneable(self, ad_item: AdItem) -> None:
+        self._data.mark_as_non_pruneable(ad_item)

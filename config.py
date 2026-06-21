@@ -1,23 +1,10 @@
-#!/bin/sh
-#
-# An example hook script to prepare the commit log message.
-# Called by "git commit" with the name of the file that has the
-# commit message, followed by the description of the commit
-# message's source.  The hook's purpose is to edit the commit
-# message file.  If the hook fails with a non-zero status,
-# the commit is aborted.
-#
-# To enable this hook, rename this file to "prepare-commit-msg".
-
-# This hook from __future__ import annotations
+from __future__ import annotations
 
 import re
 from typing import Any
 
 from pydantic import Field, field_serializer
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-from . import __version__
 
 
 class SearchConfig(BaseSettings):
@@ -37,10 +24,32 @@ class FilterConfig(BaseSettings):
         return [p.pattern for p in patterns]
 
 
+class NtfyShConfig(BaseSettings):
+    topic: str
+    priority: int = 3
+
+
+class PushoverConfig(BaseSettings):
+    token: str
+    user: str
+    device: list[str] = Field(default_factory=list)
+
+    def model_dump_api(self) -> dict[str, Any]:
+        data = self.model_dump()
+        if self.device:
+            data["device"] = ",".join(self.device)
+        return data
+
+
+class TelegramConfig(BaseSettings):
+    bot_token: str
+    chat_id: str | int
+
+
 class NotificationsConfig(BaseSettings):
-    pushover: dict | None = None
-    ntfy_sh: dict | None = None
-    telegram: dict | None = None
+    pushover: PushoverConfig | None = None
+    ntfy_sh: NtfyShConfig | None = Field(default=None, alias="ntfy.sh")
+    telegram: TelegramConfig | None = None
 
 
 class Config(BaseSettings):
@@ -55,17 +64,9 @@ class Config(BaseSettings):
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     searches: list[SearchConfig] = Field(default_factory=list)
 
-    # Global settings
     request_delay_min: float = 1.5
     request_delay_max: float = 4.0
     request_timeout: int = 30
 
-    # Load balancing and resilience
-    use_global_lock: bool = True
-    lock_timeout: int = 12
-    max_concurrent_pages: int = 5
-    data_store_max_days: int = 7
-    download_images: bool = True
-
-if __name__ == "__main__":
-    print("Config loaded successfully")
+    proxy: str | list[str] | None = None
+    use_proxy: bool = False
