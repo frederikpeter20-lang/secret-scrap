@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: ek-scraper-dashboard
+    env: python
+    plan: free
+    buildCommand: uv sync --frozen
+    startCommand: python dashboard.py
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: 1
+
+  - type: worker
+    name: scraper-high-freq
+    env: python
+    plan: free
+    buildCommand: uv sync --frozen
+    startCommand: python -m ek_scraper.cli run config_highfreq.json --loop 15
+
+  - type: worker
+    name: scraper-medium
+    env: python
+    plan: free
+    buildCommand: uv sync --frozen
+    startCommand: python -m ek_scraper.cli run config_medium.json --loop 60
+
+  - type: worker
+    name: scraper-low
+    env: python
+    plan: starter
+    buildCommand: uv sync --frozen
+    startCommand: python -m ek_scraper.cli run config_lowfreq.json --loop 900
