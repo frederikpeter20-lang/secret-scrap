@@ -58,12 +58,14 @@ async def run(config_file: pathlib.Path, data_store: pathlib.Path, send_notifica
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ek-scraper improved - Kleinanzeigen Scraper")
+    parser = argparse.ArgumentParser(description="ek-scraper improved v2 - Scraper for kleinanzeigen.de")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # Run Scraper
     run_parser = subparsers.add_parser("run", help="Run the scraper")
-    run_parser.add_argument("config_file", type=pathlib.Path, help="Path to config JSON file")
+    run_parser.add_argument("config_file", type=pathlib.Path, nargs="?", 
+                           default=pathlib.Path("example-config.json"),
+                           help="Path to config JSON file (default: example-config.json)")
     run_parser.add_argument("--data-store", type=pathlib.Path, 
                            default=pathlib.Path.home() / "ek-scraper-data.json",
                            help="Path to data store file")
@@ -89,13 +91,4 @@ def main():
         url = generate_search_url(
             keyword=args.keyword,
             location=args.location,
-            price_min=args.price_min,
-            price_max=args.price_max,
-            category=args.category,
-            sort=args.sort,
-        )
-        print(url)
-
-
-if __name__ == "__main__":
-    main()
+            price_min
