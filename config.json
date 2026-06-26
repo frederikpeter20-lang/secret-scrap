@@ -1,0 +1,26 @@
+{
+  "searches": [
+    {
+      "name": "Fahrräder Berlin",
+      "url": "https://www.kleinanzeigen.de/s-fahrrad/berlin/k0",
+      "recursive": true
+    }
+  ],
+  "filter": {
+    "exclude_topads": true,
+    "price_min": null,
+    "price_max": null,
+    "exclude_patterns": []
+  },
+  "notifications": {
+    "ntfy.sh": {
+      "topic": "mein-scraper-1234",
+      "priority": 3
+    }
+  },
+  "request_delay_min": 2.0,
+  "request_delay_max": 5.0,
+  "request_timeout": 30,
+  "use_proxy": false,
+  "proxy": null
+}
